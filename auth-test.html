@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Nostr Auth Test</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; line-height: 1.5; }
+    button { padding: .6rem 1rem; margin-right: .6rem; margin-bottom: .6rem; }
+    pre { background: #111; color: #0f0; padding: 1rem; border-radius: .5rem; overflow:auto; }
+    .row { margin: .75rem 0; }
+    input[type="text"] { width: 420px; padding: .4rem; }
+    small { color:#666 }
+  </style>
+</head>
+<body>
+  <h1>Nostr Sign-In (NIP-07 + NIP-98)</h1>
+
+  <div class="row">
+    <label>API URL:</label>
+    <input id="api" type="text" value="http://localhost:3000/api/auth/session" />
+  </div>
+
+  <div class="row">
+    <button id="login">Sign in with Nostr</button>
+    <button id="status">Session prüfen (GET)</button>
+    <button id="logout">Logout (DELETE)</button>
+  </div>
+
+  <div class="row">
+    <strong>Hinweis:</strong>
+    <ul>
+      <li>Ein NIP-07 Signer (z.B. <em>nos2x</em>, <em>Alby</em>) muss im Browser aktiv sein.</li>
+      <li>Diese Seite sollte unter <code>http://localhost:5173</code> laufen, damit CORS mit <code>APP_ORIGIN</code> passt.</li>
+    </ul>
+  </div>
+
+  <h3>Output</h3>
+  <pre id="out">–</pre>
+
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const out = $("out");
+
+    function log(obj) {
+      out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    async function sha256Hex(s) {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function signIn() {
+      const url = $("api").value;
+      const method = "POST";
+      const body = JSON.stringify({ ts: Date.now() });
+
+      if (!window.nostr || !window.nostr.signEvent) {
+        log("Kein NIP-07 Signer gefunden. Bitte z.B. nos2x oder Alby aktivieren.");
+        return;
+      }
+
+      const payload = await sha256Hex(body);
+      const event = {
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["u", url],
+          ["method", method],
+          ["payload", payload],
+        ],
+        content: "",
+      };
+
+      const signed = await window.nostr.signEvent(event);
+      const authHeader = "Nostr " + btoa(JSON.stringify(signed));
+
+      const resp = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": authHeader,
+        },
+        body,
+        credentials: "include", // wichtig: Cookie empfangen
+      });
+
+      const data = await resp.json().catch(() => ({}));
+      log({ status: resp.status, data });
+    }
+
+    async function getSession() {
+      const url = $("api").value;
+      const resp = await fetch(url, { method: "GET", credentials: "include" });
+      const data = await resp.json().catch(() => ({}));
+      log({ status: resp.status, data });
+    }
+
+    async function logout() {
+      const url = $("api").value;
+      const resp = await fetch(url, { method: "DELETE", credentials: "include" });
+      const data = await resp.json().catch(() => ({}));
+      log({ status: resp.status, data });
+    }
+
+    $("login").onclick = signIn;
+    $("status").onclick = getSession;
+    $("logout").onclick = logout;
+  </script>
+</body>
+</html>
