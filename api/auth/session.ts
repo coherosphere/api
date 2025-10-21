@@ -7,32 +7,21 @@ import { getRedis } from "../../lib/redis";
 import { randomUUID } from "crypto";
 
 /**
- * ENVs
- * APP_ORIGINS     Kommagetrennte Liste erlaubter Origins
- * NODE_ENV        production | development
- * SESSION_TTL_SEC optional, default 7 Tage
+ * ENV
+ * APP_ORIGIN     (Prod: https://app.coherosphere.com | Dev: http://localhost:5173)
+ * NODE_ENV       (production | development)
+ * SESSION_TTL_SEC (optional, default 7 Tage)
  */
-const ORIGINS = (process.env.APP_ORIGINS ?? "http://localhost:5173")
-  .split(",")
-  .map(o => o.trim())
-  .filter(Boolean);
-
+const APP_ORIGIN = process.env.APP_ORIGIN ?? "http://localhost:5173";
 const isProd = process.env.NODE_ENV === "production";
 const SESSION_TTL_SEC = Number(process.env.SESSION_TTL_SEC ?? 60 * 60 * 24 * 7);
 const COOKIE_NAME = "sid";
 
 /* -------------------- Helpers -------------------- */
 
-function pickAllowedOrigin(req: VercelRequest): string {
-  const reqOrigin = String(req.headers.origin ?? "");
-  if (ORIGINS.includes(reqOrigin)) return reqOrigin;
-  return ORIGINS[0] ?? "*";
-}
-
-function cors(res: VercelResponse, req: VercelRequest) {
-  const allow = pickAllowedOrigin(req);
-  res.setHeader("Access-Control-Allow-Origin", allow);
-  res.setHeader("Vary", "Origin");
+function cors(res: VercelResponse) {
+  // Strikt auf das Frontend (falls mehrere Origins nötig sind → Whitelist/Spiegeln einbauen)
+  res.setHeader("Access-Control-Allow-Origin", APP_ORIGIN);
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
@@ -50,14 +39,14 @@ function eTLD(host: string) {
   return parts.slice(-2).join(".");
 }
 
-function isCrossSite(reqHost: string, allowedOrigin: string) {
+function isCrossSite(reqHost: string, appOrigin: string) {
   const apiSite = eTLD(reqHost || "");
-  const appSite = eTLD(new URL(allowedOrigin).host);
-  return apiSite !== appSite; // z.B. .io vs .com => true
+  const appSite = eTLD(new URL(appOrigin).host);
+  return apiSite !== appSite; // .io vs .com => true
 }
 
-function setCookie(res: VercelResponse, sid: string, maxAge: number, reqHost: string, allowedOrigin: string) {
-  const cross = isCrossSite(reqHost, allowedOrigin);
+function setCookie(res: VercelResponse, sid: string, maxAge: number, reqHost: string) {
+  const cross = isCrossSite(reqHost, APP_ORIGIN);
   const attrs = [
     `${COOKIE_NAME}=${encodeURIComponent(sid)}`,
     "Path=/",
@@ -65,13 +54,13 @@ function setCookie(res: VercelResponse, sid: string, maxAge: number, reqHost: st
     cross ? "SameSite=None" : "SameSite=Lax", // Cross-Site braucht None
     `Max-Age=${maxAge}`,
   ];
-  if (isProd) attrs.push("Secure"); // nur Prod
-  // keine Domain setzen -> Host-Only Cookie (nur api.coherosphere.io)
+  if (isProd) attrs.push("Secure"); // Secure nur in Prod; lokal ohne Secure
+  // WICHTIG: keine Domain setzen -> Host-Only Cookie (nur api.coherosphere.io)
   res.setHeader("Set-Cookie", attrs.join("; "));
 }
 
-function clearCookie(res: VercelResponse, reqHost: string, allowedOrigin: string) {
-  const cross = isCrossSite(reqHost, allowedOrigin);
+function clearCookie(res: VercelResponse, reqHost: string) {
+  const cross = isCrossSite(reqHost, APP_ORIGIN);
   const attrs = [
     `${COOKIE_NAME}=`,
     "Path=/",
@@ -94,13 +83,11 @@ function absoluteUrl(req: VercelRequest) {
 /* -------------------- Handler -------------------- */
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  cors(res, req);
+  cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
 
   const url = absoluteUrl(req);
   const host = String(req.headers.host || "");
-  const allowedOrigin = pickAllowedOrigin(req);
-
   const bodyRaw =
     typeof req.body === "string" ? req.body : req.body ? JSON.stringify(req.body) : undefined;
 
@@ -121,7 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await redis.hset(`session:${sid}`, { pubkey: v.pubkey, iat: Date.now().toString() });
     await redis.expire(`session:${sid}`, SESSION_TTL_SEC);
 
-    setCookie(res, sid, SESSION_TTL_SEC, host, allowedOrigin);
+    setCookie(res, sid, SESSION_TTL_SEC, host);
     return res.status(201).json({ ok: true, pubkey: v.pubkey });
   }
 
@@ -142,7 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const redis = getRedis();
       await redis.del(`session:${sid}`);
     }
-    clearCookie(res, host, allowedOrigin);
+    clearCookie(res, host);
     return res.status(200).json({ ok: true, loggedOut: true });
   }
 
