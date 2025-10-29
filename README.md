@@ -46,4 +46,10 @@ Use, remix, and extend — provided alignment with the coherosphere Manifesto.
 ## Connect
 
 - Website: [coherosphere.com](https://coherosphere.com)  
-- Repository: [github.com/coherosphere/api](https://github.com/coherosphere/api)
+- GitHub: [github.com/coherosphere](https://github.com/coherosphere)  
+- Nostr: [npub…](https://nostr.band/npub1kc9weag9hjf0p0xz5naamts48rdkzymucvrd9ws8ns7n4x3qq5gsljlnck)
+
+---
+
+**Technology that serves life. Governance that learns. Money that remembers truth.**  
+*— The coherosphere collective, 2025*
