@@ -46,5 +46,4 @@ Use, remix, and extend — provided alignment with the coherosphere Manifesto.
 ## Connect
 
 - Website: [coherosphere.com](https://coherosphere.com)  
-- Docs: [docs.coherosphere.com/api](https://docs.coherosphere.com/api)  
 - Repository: [github.com/coherosphere/api](https://github.com/coherosphere/api)
